@@ -11,10 +11,10 @@
 #include <charset/latin_basic.h>
 
 // pins
-#define CS_PIN        2
-#define WR_PIN        0
-#define DATA_PIN      4
-#define BACKLIGHT_PIN 5
+#define CS_PIN        D4
+#define WR_PIN        D2
+#define DATA_PIN      D3
+#define BACKLIGHT_PIN D1
 
 // display settings
 #define PLACES_COUNT 10
@@ -25,6 +25,7 @@ DM8BA10* LCD;
 const DM8BA10::Padding alignment[] = { DM8BA10::Padding::Right, DM8BA10::Padding::Left, DM8BA10::Padding::Both };
 volatile byte curAlignmentIndex = 0;
 const String texts[] = { "Left", "Right", "Center" };
+uint32_t lastUpd = 0;
 
 char appname[] = "INFO: home_bro start";
 char host[] = "192.168.147.1";
@@ -36,7 +37,7 @@ PubSubClient mqttclient(wificlient);
 
 void wifiConnect() {
   WiFi.begin(ssid, pass);
-  Serial.print("WIFI: Connecting to WiFi ..");
+  Serial.println("WIFI: Connecting to WiFi ..");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print('.');
     delay(1000);
@@ -155,8 +156,6 @@ void loop() {
     mqttReconnect();
   }
   mqttclient.loop();
-
-    static uint32_t lastUpd = 0;
 
   auto nowMs = millis();
   if (nowMs - lastUpd > REFRESH_RATE) {
