@@ -2,6 +2,10 @@
 
 */
 
+#include <Arduino.h>
+#include <IRremoteESP8266.h>
+#include <IRrecv.h>
+#include <IRutils.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 //#include <json.h>
@@ -20,12 +24,20 @@
 #define PLACES_COUNT 10
 #define REFRESH_RATE 1000 // display update speed in ms
 
-DM8BA10* LCD;
+// An IR detector/demodulator is connected to GPIO pin 14(D5 on a NodeMCU board).
+// ir receiver, interrupt capable
+#define IR_PIN        D5
 
-const DM8BA10::Padding alignment[] = { DM8BA10::Padding::Right, DM8BA10::Padding::Left, DM8BA10::Padding::Both };
-volatile byte curAlignmentIndex = 0;
-const String texts[] = { "Left", "Right", "Center" };
-uint32_t lastUpd = 0;
+// buttons
+#define BTN_1         D0
+#define BTN_2         D6
+#define BTN_3         D7
+#define BTN_4         D8  // IO, 10k Pull-down, SS
+
+IRrecv irrecv(IR_PIN);
+decode_results results;
+
+DM8BA10* LCD;
 
 char appname[] = "INFO: home_bro start";
 char host[] = "192.168.147.1";
@@ -34,6 +46,87 @@ char topicCommand[] = "tele/tasmota_A6C75F/SENSOR";
 
 WiFiClient wificlient;
 PubSubClient mqttclient(wificlient);
+
+const uint32_t IR_REMOTE_MELICONI_SAMSUNG_CODE[33] = {
+    0xE0E020DF,
+    0xE0E0A05F,
+    0xE0E0609F,
+    0xE0E010EF,
+    0xE0E0906F,
+    0xE0E050AF,
+    0xE0E030CF,
+    0xE0E0B04F,
+    0xE0E0708F,
+    0xE0E08877,
+    0xE0E0F807,
+    0xE0E0807F,
+    0xE0E036C9,
+    0xE0E028D7,
+    0xE0E0A857,
+    0xE0E06897,
+    0xE0E040BF,
+    0xE0E0D02F,
+    0xE0E0E01F,
+    0xE0E008F7,
+    0xE0E048B7,
+    0xE0E058A7,
+    0xE0E0F00F,
+    0xE0E0CF30,
+    0xE0E09E61,
+    0xE0E0F20D,
+    0xE0E006F9,
+    0xE0E0A659,
+    0xE0E046B9,
+    0xE0E08679,
+    0xE0E016E9,
+    0xE0E01AE5,
+    0xE0E0B44B
+};
+
+const char* IR_REMOTE_MELICONI_SAMSUNG_SYMBOL[33] = {
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "0",
+    "I",
+    "CH_IN",
+    "ROSSO",
+    "VERDE",
+    "GIALLO",
+    "BLU",
+    "ON_OFF",
+    "VOL -",
+    "VOL +",
+    "PROG -",
+    "PROG +",
+    "MENU",
+    "MUTE",
+    "APP",
+    "HOME",
+    "GUIDE",
+    "UP",
+    "LEFT",
+    "RIGHT",
+    "DOWN",
+    "OK",
+    "BACK",
+    "EXIT"
+};
+
+const char *irDecode(uint32_t code) {
+  for (uint8_t i = 0; i < 33; i++) {
+    if (IR_REMOTE_MELICONI_SAMSUNG_CODE[i] == code) {
+        return IR_REMOTE_MELICONI_SAMSUNG_SYMBOL[i];
+    }
+  }
+  return "-N/D-";
+}
 
 void wifiConnect() {
   WiFi.begin(ssid, pass);
@@ -145,10 +238,18 @@ void setup() {
   LCD = new DM8BA10(new LatinBasicCharset(), CS_PIN, WR_PIN, DATA_PIN, BACKLIGHT_PIN);
   LCD->backlight();
 
+  irrecv.enableIRIn();
+
+  pinMode(BTN_1, INPUT_PULLUP);
+  pinMode(BTN_2, INPUT_PULLUP);
+  pinMode(BTN_3, INPUT_PULLUP);
+  pinMode(BTN_4, INPUT);            // IO, 10k Pull-down, SS 
+
   wifiConnect();
   wifiData();
   mqttConnect();
 
+  LCD->println("HOME BRO", DM8BA10::Both);
 }
 
 void loop() {
@@ -157,12 +258,29 @@ void loop() {
   }
   mqttclient.loop();
 
-  auto nowMs = millis();
-  if (nowMs - lastUpd > REFRESH_RATE) {
-    LCD->println(texts[curAlignmentIndex], alignment[curAlignmentIndex]);
-
-    if (curAlignmentIndex++ >= 2)
-        curAlignmentIndex = 0;
-      lastUpd = nowMs;
+  if (irrecv.decode(&results)) {
+    LCD->println(irDecode(results.value), DM8BA10::Both);
+    //
+    // only for debug
+    // serialPrintUint64(results.value, HEX);
+    // Serial.println("");
+    // Serial.print(resultToHumanReadableBasic(&results));
+    // Serial.println("");
+    //
+    irrecv.resume();  // Receive the next value
   }
+
+  if (digitalRead(BTN_1) == LOW) {
+    LCD->println("BTN 1", DM8BA10::Both);
+  }
+  if (digitalRead(BTN_2) == LOW) {
+    LCD->println("BTN 2", DM8BA10::Both);
+  }
+  if (digitalRead(BTN_3) == LOW) {
+    LCD->println("BTN 3", DM8BA10::Both);
+  }
+  if (digitalRead(BTN_4) == HIGH) {
+    LCD->println("BTN 4", DM8BA10::Both);
+  }
+
 }
