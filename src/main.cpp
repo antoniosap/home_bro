@@ -1,5 +1,5 @@
 /*
-
+ * https://www.wemos.cc/en/latest/d1/d1_mini_lite.html
 */
 
 #include <Arduino.h>
@@ -21,8 +21,9 @@
 #define BACKLIGHT_PIN D1
 
 // display settings
-#define PLACES_COUNT 10
-#define REFRESH_RATE 1000 // display update speed in ms
+#define PLACES_COUNT  10
+#define REFRESH_RATE  500 // display update speed in ms
+#define BANNER_TIMER  (1000 * 30) // seconds of banner display
 
 // An IR detector/demodulator is connected to GPIO pin 14(D5 on a NodeMCU board).
 // ir receiver, interrupt capable
@@ -34,18 +35,24 @@
 #define BTN_3         D7
 #define BTN_4         D8  // IO, 10k Pull-down, SS
 
+char appname[]        = "HOME BRO START";
+char host[]           = "192.168.147.1";
+char topicResult[]    = "home_bro/RESULT";
+char topicCommand[]   = "tele/tasmota_A6C75F/SENSOR";
+
 IRrecv irrecv(IR_PIN);
 decode_results results;
 
-DM8BA10* LCD;
+DM8BA10*  LCD;
+String    msg = appname;
+word      strPos =  0;
+uint32_t  lastUpd = 0;
+uint32_t  bannerTimer = 0;
+bool      banner = true; 
 
-char appname[] = "INFO: home_bro start";
-char host[] = "192.168.147.1";
-char topicResult[] = "home_bro/RESULT";
-char topicCommand[] = "tele/tasmota_A6C75F/SENSOR";
-
-WiFiClient wificlient;
-PubSubClient mqttclient(wificlient);
+WiFiClient    wificlient;
+PubSubClient  mqttclient(wificlient);
+wl_status_t   wifiStatus = WL_IDLE_STATUS;
 
 const uint32_t IR_REMOTE_MELICONI_SAMSUNG_CODE[33] = {
     0xE0E020DF,
@@ -128,39 +135,44 @@ const char *irDecode(uint32_t code) {
   return "-N/D-";
 }
 
-void wifiConnect() {
+wl_status_t wifiConnect() {
+  uint8_t counts = 10;
   WiFi.begin(ssid, pass);
-  Serial.println("WIFI: Connecting to WiFi ..");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
+  msg = "WIFI CONN";
+  Serial.println(msg);
+  LCD->println(msg, DM8BA10::Both);
+
+  while ((WiFi.status() != WL_CONNECTED) && (counts-- > 0)) {
     delay(1000);
   }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    msg = "WIFI DISC";
+    Serial.println(msg);
+    LCD->println(msg, DM8BA10::Both);
+  }
+  return WiFi.status();
 }
 
 void wifiData() {
+  Serial.println();
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
-  Serial.print("\nWIFI: IP Address: ");
-  Serial.println(ip);
+  msg = "IP: " + ip.toString();
   // print your MAC address:
   byte mac[6];
   WiFi.macAddress(mac);
-  Serial.print("WIFI: MAC address: ");
-  Serial.print(mac[5], HEX);
-  Serial.print(":");
-  Serial.print(mac[4], HEX);
-  Serial.print(":");
-  Serial.print(mac[3], HEX);
-  Serial.print(":");
-  Serial.print(mac[2], HEX);
-  Serial.print(":");
-  Serial.print(mac[1], HEX);
-  Serial.print(":");
-  Serial.println(mac[0], HEX);
+  msg += " MAC: " + 
+         String(mac[5], HEX) + ":" + 
+         String(mac[4], HEX) + ":" + 
+         String(mac[3], HEX) + ":" + 
+         String(mac[2], HEX) + ":" + 
+         String(mac[1], HEX) + ":" + 
+         String(mac[0], HEX);
   // print the received signal strength:
-  long rssi = WiFi.RSSI();
-  Serial.print("WIFI: signal strength (RSSI):");
-  Serial.println(rssi);
+  msg += " RSSI: " + String(WiFi.RSSI()) + " DB";
+  msg.toUpperCase();
+  Serial.println(msg);
 }
 
 void checkWiFi() {
@@ -175,6 +187,7 @@ void checkWiFi() {
     case WL_CONNECTION_LOST:
     case WL_DISCONNECTED:
       Serial.println("WIFI: not connected");
+      LCD->println("WIFI DISC", DM8BA10::Both);
       WiFi.begin(ssid, pass);
       return;
   }
@@ -190,6 +203,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
+
+  if (!banner) {
+    msg = "";
+    for (unsigned int i=0;i<length;i++) {
+      msg += (char)payload[i];
+    }
+  }
 }
 
 void mqttConnect() {
@@ -245,18 +265,21 @@ void setup() {
   pinMode(BTN_3, INPUT_PULLUP);
   pinMode(BTN_4, INPUT);            // IO, 10k Pull-down, SS 
 
-  wifiConnect();
-  wifiData();
-  mqttConnect();
-
   LCD->println("HOME BRO", DM8BA10::Both);
+  delay(2000);
+
+  wifiStatus = wifiConnect();
+  if (wifiStatus == WL_CONNECTED) {
+    wifiData();
+    mqttConnect();
+  }
 }
 
 void loop() {
-  if (!mqttclient.connected()) {
-    mqttReconnect();
+  if (wifiStatus == WL_CONNECTED) {
+    if (!mqttclient.connected()) mqttReconnect();
+    mqttclient.loop();
   }
-  mqttclient.loop();
 
   if (irrecv.decode(&results)) {
     LCD->println(irDecode(results.value), DM8BA10::Both);
@@ -283,4 +306,15 @@ void loop() {
     LCD->println("BTN 4", DM8BA10::Both);
   }
 
+  if (millis() - lastUpd > REFRESH_RATE) {
+    LCD->scroll(msg, strPos++);
+    if (strPos == msg.length()) {
+      strPos = 0;
+    }
+    lastUpd = millis();
+  }
+
+  if (banner && (millis() - bannerTimer > BANNER_TIMER)) {
+    banner = false;
+  }
 }
