@@ -22,8 +22,8 @@
 
 // display settings
 #define PLACES_COUNT  10
-#define REFRESH_RATE  500 // display update speed in ms
-#define BANNER_TIMER  (1000 * 30) // seconds of banner display
+#define REFRESH_RATE  500           // display update speed in ms
+#define BANNER_TIMER  (1000 * 45)   // seconds of banner display
 
 // An IR detector/demodulator is connected to GPIO pin 14(D5 on a NodeMCU board).
 // ir receiver, interrupt capable
@@ -38,7 +38,7 @@
 char appname[]        = "HOME BRO START";
 char host[]           = "192.168.147.1";
 char topicResult[]    = "home_bro/RESULT";
-char topicCommand[]   = "tele/tasmota_A6C75F/SENSOR";
+String topicCommand   = "home_bro/CMD/";
 
 IRrecv irrecv(IR_PIN);
 decode_results results;
@@ -48,7 +48,8 @@ String    msg = appname;
 word      strPos =  0;
 uint32_t  lastUpd = 0;
 uint32_t  bannerTimer = 0;
-bool      banner = true; 
+bool      banner = true;
+char      buf[64];
 
 WiFiClient    wificlient;
 PubSubClient  mqttclient(wificlient);
@@ -156,9 +157,11 @@ wl_status_t wifiConnect() {
 
 void wifiData() {
   Serial.println();
+
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
   msg = "IP: " + ip.toString();
+
   // print your MAC address:
   byte mac[6];
   WiFi.macAddress(mac);
@@ -171,6 +174,13 @@ void wifiData() {
          String(mac[0], HEX);
   // print the received signal strength:
   msg += " RSSI: " + String(WiFi.RSSI()) + " DB";
+
+  // topic cmd name
+  topicCommand += String(mac[2], HEX) + 
+                  String(mac[1], HEX) +
+                  String(mac[0], HEX);
+  topicCommand.toUpperCase();
+  msg += " TOPIC CMD: " + topicCommand;
   msg.toUpperCase();
   Serial.println(msg);
 }
@@ -234,7 +244,8 @@ void mqttReconnect() {
       // Once connected, publish an announcement...
       mqttclient.publish(topicResult,"MQTT: connected: hello world");
       // ... and resubscribe
-      mqttclient.subscribe(topicCommand);
+      topicCommand.toCharArray(buf, 64);
+      mqttclient.subscribe(buf);
     } else {
       Serial.print("MQTT: failed, rc=");
       Serial.print(mqttclient.state());
@@ -316,5 +327,6 @@ void loop() {
 
   if (banner && (millis() - bannerTimer > BANNER_TIMER)) {
     banner = false;
+    Serial.println("banner end");
   }
 }
