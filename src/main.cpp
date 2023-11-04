@@ -29,12 +29,6 @@
 // ir receiver, interrupt capable
 #define IR_PIN        D5
 
-// buttons
-#define BTN_1         D0
-#define BTN_2         D6
-#define BTN_3         D7
-#define BTN_4         D8  // IO, 10k Pull-down, SS
-
 char appname[]        = "HOME BRO START";
 char host[]           = "192.168.147.1";
 char topicResult[]    = "home_bro/RESULT";
@@ -140,7 +134,7 @@ wl_status_t wifiConnect() {
   uint8_t counts = 10;
   WiFi.begin(ssid, pass);
   msg = "WIFI CONN";
-  Serial.println(msg);
+  // Serial.println(msg);
   LCD->println(msg, DM8BA10::Both);
 
   while ((WiFi.status() != WL_CONNECTED) && (counts-- > 0)) {
@@ -149,14 +143,14 @@ wl_status_t wifiConnect() {
 
   if (WiFi.status() != WL_CONNECTED) {
     msg = "WIFI DISC";
-    Serial.println(msg);
+    // Serial.println(msg);
     LCD->println(msg, DM8BA10::Both);
   }
   return WiFi.status();
 }
 
 void wifiData() {
-  Serial.println();
+  // Serial.println();
 
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
@@ -182,7 +176,7 @@ void wifiData() {
   topicCommand.toUpperCase();
   msg += " TOPIC CMD: " + topicCommand;
   msg.toUpperCase();
-  Serial.println(msg);
+  // Serial.println(msg);
 }
 
 void checkWiFi() {
@@ -196,7 +190,7 @@ void checkWiFi() {
     case WL_CONNECT_FAILED:
     case WL_CONNECTION_LOST:
     case WL_DISCONNECTED:
-      Serial.println("WIFI: not connected");
+      // Serial.println("WIFI: not connected");
       LCD->println("WIFI DISC", DM8BA10::Both);
       WiFi.begin(ssid, pass);
       return;
@@ -223,9 +217,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void mqttConnect() {
-  Serial.print("MQTT: Connecting to mqtt ");
-  Serial.print(host);
-  Serial.println(" broker...");
+  // Serial.print("MQTT: Connecting to mqtt ");
+  // Serial.print(host);
+  // Serial.println(" broker...");
   mqttclient.setServer(host, 1883);
   mqttclient.setCallback(mqttCallback);
 }
@@ -237,7 +231,8 @@ void publishHello() {
 void mqttReconnect() {
   // Loop until we're reconnected
   while (!mqttclient.connected()) {
-    Serial.println("MQTT: Attempting MQTT connection...");
+    Serial.print("MQTT: Attempting MQTT connection...");
+    Serial.println(host);
     // Attempt to connect
     if (mqttclient.connect("home_show_alone")) {
       Serial.println("MQTT: connected");
@@ -256,6 +251,21 @@ void mqttReconnect() {
   }
 }
 
+uint8_t decodeButton(int button_v) {
+  if (button_v >= 1000) {
+    return 0;
+  } else if (button_v >= 800 && button_v <= 900) {
+    return 1;
+  } else if (button_v >= 600 && button_v <= 680) {
+    return 2;
+  } else if (button_v >= 400 && button_v <= 450) {
+    return 3;
+  } else if (button_v >= 190 && button_v <= 250) {
+    return 4;
+  }
+  return 0;
+}
+
 //----------------------------------------------------------------------------------
 
 void setup() {
@@ -270,11 +280,6 @@ void setup() {
   LCD->backlight();
 
   irrecv.enableIRIn();
-
-  pinMode(BTN_1, INPUT_PULLUP);
-  pinMode(BTN_2, INPUT_PULLUP);
-  pinMode(BTN_3, INPUT_PULLUP);
-  pinMode(BTN_4, INPUT);            // IO, 10k Pull-down, SS 
 
   LCD->println("HOME BRO", DM8BA10::Both);
   delay(2000);
@@ -304,17 +309,23 @@ void loop() {
     irrecv.resume();  // Receive the next value
   }
 
-  if (digitalRead(BTN_1) == LOW) {
-    LCD->println("BTN 1", DM8BA10::Both);
-  }
-  if (digitalRead(BTN_2) == LOW) {
-    LCD->println("BTN 2", DM8BA10::Both);
-  }
-  if (digitalRead(BTN_3) == LOW) {
-    LCD->println("BTN 3", DM8BA10::Both);
-  }
-  if (digitalRead(BTN_4) == HIGH) {
-    LCD->println("BTN 4", DM8BA10::Both);
+  int button_v = analogRead(A0);
+  // debug analog keyboard
+  // sprintf(buf, "V: %d *%d*", button_v, decodeButton(button_v));
+  // Serial.println(buf);
+
+  if (decodeButton(button_v) == 1) {
+    // LCD->println("BTN 1", DM8BA10::Both);
+    msg = "  BTN 1  ";
+  } else if (decodeButton(button_v) == 2) {
+    // LCD->println("BTN 2", DM8BA10::Both);
+    msg = "  BTN 2  ";
+  } else if (decodeButton(button_v) == 3) {
+    // LCD->println("BTN 3", DM8BA10::Both);
+    msg = "  BTN 3  ";
+  } else if (decodeButton(button_v) == 4) {
+    // LCD->println("BTN 4", DM8BA10::Both);
+    msg = "  BTN 4  ";
   }
 
   if (millis() - lastUpd > REFRESH_RATE) {
