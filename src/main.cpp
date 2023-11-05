@@ -8,7 +8,6 @@
 #include <IRutils.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-//#include <json.h>
 #include <string>
 #include "secrets.h"
 #include <DM8BA10.h>
@@ -31,19 +30,21 @@
 
 char appname[]        = "HOME BRO START";
 char host[]           = "192.168.147.1";
-char topicResult[]    = "home_bro/RESULT";
+String topicResult    = "home_bro/RESULT/";
 String topicCommand   = "home_bro/CMD/";
 
 IRrecv irrecv(IR_PIN);
 decode_results results;
 
 DM8BA10*  LCD;
-String    msg = appname;
-word      strPos =  0;
-uint32_t  lastUpd = 0;
+String    msg         = appname;
+word      strPos      = 0;
+uint32_t  lastUpd     = 0;
 uint32_t  bannerTimer = 0;
-bool      banner = true;
+bool      banner      = true;
 char      buf[64];
+uint8_t   lastBtnID   = 0;
+uint8_t   btnID       = 0;
 
 WiFiClient    wificlient;
 PubSubClient  mqttclient(wificlient);
@@ -155,28 +156,34 @@ void wifiData() {
   // print your WiFi shield's IP address:
   IPAddress ip = WiFi.localIP();
   msg = "IP: " + ip.toString();
+  msg.toUpperCase();
 
   // print your MAC address:
   byte mac[6];
   WiFi.macAddress(mac);
-  msg += " MAC: " + 
-         String(mac[5], HEX) + ":" + 
-         String(mac[4], HEX) + ":" + 
-         String(mac[3], HEX) + ":" + 
-         String(mac[2], HEX) + ":" + 
+  String macstr = String(" MAC: " + 
+         String(mac[0], HEX) + ":" + 
          String(mac[1], HEX) + ":" + 
-         String(mac[0], HEX);
+         String(mac[2], HEX) + ":" + 
+         String(mac[3], HEX) + ":" + 
+         String(mac[4], HEX) + ":" + 
+         String(mac[5], HEX));
+  macstr.toUpperCase();
+  msg += macstr;    
   // print the received signal strength:
   msg += " RSSI: " + String(WiFi.RSSI()) + " DB";
-
   // topic cmd name
-  topicCommand += String(mac[2], HEX) + 
-                  String(mac[1], HEX) +
-                  String(mac[0], HEX);
+  topicCommand += String(mac[3], HEX) + 
+                  String(mac[4], HEX) +
+                  String(mac[5], HEX);
   topicCommand.toUpperCase();
-  msg += " TOPIC CMD: " + topicCommand;
-  msg.toUpperCase();
-  // Serial.println(msg);
+  // topic result name
+  topicResult += String(mac[3], HEX) + 
+                 String(mac[4], HEX) +
+                 String(mac[5], HEX);
+  topicResult.toUpperCase();
+  msg += " TOPIC RESULT: " + topicResult;
+  Serial.println(msg);
 }
 
 void checkWiFi() {
@@ -224,8 +231,12 @@ void mqttConnect() {
   mqttclient.setCallback(mqttCallback);
 }
 
-void publishHello() {
-  if (mqttclient.connected()) mqttclient.publish(topicResult, appname);
+void publishButton(uint v) {
+  if (mqttclient.connected()) {
+    mqttclient.publish(topicResult.c_str(), (String("{\"Button\": ") + String(v) + String("}")).c_str());
+  } else {
+    LCD->println("MQTT DISC", DM8BA10::Both);
+  }
 }
 
 void mqttReconnect() {
@@ -237,7 +248,7 @@ void mqttReconnect() {
     if (mqttclient.connect("home_show_alone")) {
       Serial.println("MQTT: connected");
       // Once connected, publish an announcement...
-      mqttclient.publish(topicResult,"MQTT: connected: hello world");
+      // mqttclient.publish(topicResult.c_str(),"MQTT: connected: home_bro");
       // ... and resubscribe
       topicCommand.toCharArray(buf, 64);
       mqttclient.subscribe(buf);
@@ -313,19 +324,25 @@ void loop() {
   // debug analog keyboard
   // sprintf(buf, "V: %d *%d*", button_v, decodeButton(button_v));
   // Serial.println(buf);
+  btnID = decodeButton(button_v);
 
-  if (decodeButton(button_v) == 1) {
+  if (btnID == 1) {
     // LCD->println("BTN 1", DM8BA10::Both);
     msg = "  BTN 1  ";
-  } else if (decodeButton(button_v) == 2) {
+  } else if (btnID == 2) {
     // LCD->println("BTN 2", DM8BA10::Both);
     msg = "  BTN 2  ";
-  } else if (decodeButton(button_v) == 3) {
+  } else if (btnID == 3) {
     // LCD->println("BTN 3", DM8BA10::Both);
     msg = "  BTN 3  ";
-  } else if (decodeButton(button_v) == 4) {
+  } else if (btnID == 4) {
     // LCD->println("BTN 4", DM8BA10::Both);
     msg = "  BTN 4  ";
+  }
+
+  if (lastBtnID != btnID) {
+    lastBtnID = btnID;
+    publishButton(btnID);
   }
 
   if (millis() - lastUpd > REFRESH_RATE) {
